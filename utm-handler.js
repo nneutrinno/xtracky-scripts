@@ -161,7 +161,7 @@
                     return lastURL !== event.destination.url;
                 }
                 function getURL() {
-                    return mergeURLSearchs(event.destination.url, location.href);
+                    return mergeURLSearchs(location.href, event.destination.url);
                 }
                 function mergeURLSearchs(...urls) {
                     const instances = urls.map(url => new URL(url));

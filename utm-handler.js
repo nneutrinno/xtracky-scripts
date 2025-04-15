@@ -7,6 +7,7 @@
         'currentUrl': new URL(window.location.href),
         'campaignIdParam': 'CampaignID',
     };
+    const UTM_SOURCE_ID_PARAM = 'utm_source';
     console.log({ config });
     function initializeFromScript() {
         const currentScript = getCurrentScript();
@@ -40,7 +41,7 @@
                 return;
             }
             const currentQuery = config.currentUrl.searchParams;
-            currentQuery.set("utm_source", utmValue);
+            currentQuery.set(UTM_SOURCE_ID_PARAM, utmValue);
             console.log('link.search', link.search);
             const current = new URLSearchParams(link.search);
             for (const item of currentQuery) {
@@ -92,7 +93,7 @@
         });
         console.log({ urlParams, clickId, utmValue });
         if (clickId) {
-            config.currentUrl.searchParams.set("utm_source", utmValue);
+            config.currentUrl.searchParams.set(UTM_SOURCE_ID_PARAM, utmValue);
             localStorage.setItem(`KWAI_UTM_TRACK_${config.token}`, utmValue);
             window.history.pushState({}, '', config.currentUrl.toString());
             await dispatch({
@@ -105,7 +106,7 @@
         else {
             const hasUtmSaved = localStorage.getItem(`KWAI_UTM_TRACK_${config.token}`);
             if (hasUtmSaved) {
-                config.currentUrl.searchParams.set("utm_source", hasUtmSaved);
+                config.currentUrl.searchParams.set(UTM_SOURCE_ID_PARAM, hasUtmSaved);
                 window.history.pushState({}, '', config.currentUrl.toString());
                 await dispatch({
                     r: btoa(config.currentUrl.href),
@@ -197,18 +198,22 @@
                 });
             }
         }
-        function getCurrentUTMSourceBySearch() {
-            return new URLSearchParams(window.location.search).get('utm_source') ?? undefined;
+        function getRelevantQuerySearch() {
+            const searchParams = new URLSearchParams(window.location.search);
+            return omitNullish(Object.fromEntries([config.clickIdParam, UTM_SOURCE_ID_PARAM].map(id => [id, getQuerySearchParam(id, searchParams)])));
+        }
+        function getQuerySearchParam(id, searchParams = new URLSearchParams(window.location.search)) {
+            return searchParams.get(id) ?? undefined;
+        }
+        function omitNullish(source) {
+            const content = {};
+            for (const name in source)
+                if (source[name] != null)
+                    content[name] = source[name];
+            return content;
         }
         function getURL(to) {
-            return mergeURLSearchs({ url: to, search: [new URLSearchParams(omitNullish({ utm_source: getCurrentUTMSourceBySearch() })), to] });
-            function omitNullish(source) {
-                const content = {};
-                for (const name in source)
-                    if (source[name] != null)
-                        content[name] = source[name];
-                return content;
-            }
+            return mergeURLSearchs({ url: to, search: [new URLSearchParams(getRelevantQuerySearch()), to] });
             function mergeURLSearchs({ url, search }) {
                 const main = new URL(url);
                 const searchConfig = omitNullish(Object.assign({}, ...search.map(getSearchParams).map(Object.fromEntries)));

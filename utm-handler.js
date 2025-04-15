@@ -130,46 +130,108 @@
             return fn();
         window.addEventListener("load", fn);
     }
+    function isIframe() {
+        try {
+            return window.self !== window.top;
+        }
+        catch (e) {
+            return true;
+        }
+    }
     function initWatch() {
         watchNavigation();
-        watchIframes();
+        $watch('iframe', iframes => iframes.forEach(iframe => {
+            if (iframe.src) {
+                const url = new URL(iframe.src);
+                url.search = new URLSearchParams({
+                    ...Object.fromEntries(new URLSearchParams(window.location.search)),
+                    ...Object.fromEntries(url.searchParams),
+                }).toString();
+                iframe.src = url.href;
+            }
+        }));
     }
     function watchNavigation() {
-        polyfill();
-        if (window.navigation)
-            return run();
-        window.addEventListener('navigationReady', run);
-        function run() {
-            let lastURL;
-            window.navigation?.addEventListener("navigate", (event) => {
-                const navigation = window.navigation;
-                if (!event?.destination?.url)
-                    return;
-                event.destination.url = event?.destination?.url?.href ?? event?.destination?.url;
-                if (!shouldIntercept(event))
-                    return;
-                event.preventDefault();
-                redirect(event, getURL());
-                function redirect(event, url) {
-                    const shouldRefresh = !event.destination.sameDocument;
-                    lastURL = url;
-                    if (shouldRefresh)
-                        return navigation.navigate(url, { history: event.navigationType === 'push' ? 'push' : event.navigationType === 'replace' ? 'replace' : 'auto' });
-                    history.pushState({}, '', url);
+        interceptWindowOpen();
+        startRun();
+        function interceptWindowOpen() {
+            if (!isIframe())
+                return;
+            const currentWindow = window;
+            const previousOpen = currentWindow.open;
+            window.open = function open(input, target, ...others) {
+                if (isIframe() && target === '_top') {
+                    const url = safeFactoryURL(input);
+                    if (url)
+                        return previousOpen.call(this, getURL(url.href), target, ...others);
                 }
-                function shouldIntercept(event) {
-                    return lastURL !== event.destination.url;
+                return previousOpen.apply(this, arguments);
+            };
+        }
+        function startRun() {
+            polyfill();
+            if (window.navigation)
+                return run();
+            window.addEventListener('navigationReady', run);
+            function run() {
+                let lastURL;
+                window.navigation?.addEventListener("navigate", (event) => {
+                    const navigation = window.navigation;
+                    if (!event?.destination?.url)
+                        return;
+                    event.destination.url = event?.destination?.url?.href ?? event?.destination?.url;
+                    if (!shouldIntercept(event))
+                        return;
+                    event.preventDefault();
+                    redirect(event, getURL(event.destination.url));
+                    function redirect(event, url) {
+                        const shouldRefresh = !event.destination.sameDocument;
+                        lastURL = url;
+                        if (shouldRefresh)
+                            return navigation.navigate(url, { history: event.navigationType === 'push' ? 'push' : event.navigationType === 'replace' ? 'replace' : 'auto' });
+                        history.pushState({}, '', url);
+                    }
+                    function shouldIntercept(event) {
+                        return lastURL !== event.destination.url;
+                    }
+                });
+            }
+        }
+        function getCurrentUTMSourceBySearch() {
+            return new URLSearchParams(window.location.search).get('utm_source') ?? undefined;
+        }
+        function getURL(to) {
+            return mergeURLSearchs({ url: to, search: [new URLSearchParams(omitNullish({ utm_source: getCurrentUTMSourceBySearch() })), to] });
+            function omitNullish(source) {
+                const content = {};
+                for (const name in source)
+                    if (source[name] != null)
+                        content[name] = source[name];
+                return content;
+            }
+            function mergeURLSearchs({ url, search }) {
+                const main = new URL(url);
+                const searchConfig = omitNullish(Object.assign({}, ...search.map(getSearchParams).map(Object.fromEntries)));
+                main.search = new URLSearchParams(searchConfig).toString();
+                return main.href;
+                function getSearchParams(url) {
+                    if (url instanceof URLSearchParams)
+                        return url;
+                    if (url instanceof URL)
+                        return url.searchParams;
+                    return safeFactoryURL(url)?.searchParams ?? new URLSearchParams(url);
                 }
-                function getURL() {
-                    return mergeURLSearchs({ url: event.destination.url, priorityURLSearch: [location.href, event.destination.url] });
-                }
-                function mergeURLSearchs({ url, priorityURLSearch }) {
-                    const instances = priorityURLSearch.map(url => new URL(url));
-                    const main = new URL(url);
-                    main.search = new URLSearchParams(Object.assign({}, ...instances.map(url => Object.fromEntries(url.searchParams)))).toString();
-                    return main.href;
-                }
-            });
+            }
+        }
+        function safeFactoryURL(url) {
+            try {
+                if (url instanceof URL)
+                    return url;
+                return new URL(url);
+            }
+            catch {
+                return;
+            }
         }
         function polyfill() {
             if (!window.navigation) {
@@ -189,49 +251,34 @@
             }
         }
     }
-    function watchIframes() {
-        function $watch(query, process) {
-            onLoad(() => {
-                // Process existing iframes when page loads
-                process(document.querySelectorAll(query));
-                // Set up observer for dynamically added iframes
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach((mutation) => {
-                        // Check for added nodes
-                        if (mutation.addedNodes && mutation.addedNodes.length > 0) {
-                            mutation.addedNodes.forEach((node) => {
-                                // Check if the added node is an iframe
-                                if (node instanceof Element) {
-                                    if (node.matches(query)) {
-                                        process([node]);
-                                    }
-                                    // Check if the added node contains iframes
-                                    process(node.querySelectorAll(query));
+    function $watch(query, process, root = document) {
+        onLoad(() => {
+            // Process existing iframes when page loads
+            process(root.querySelectorAll(query));
+            // Set up observer for dynamically added iframes
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    // Check for added nodes
+                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+                        mutation.addedNodes.forEach((node) => {
+                            // Check if the added node is an iframe
+                            if (node instanceof Element) {
+                                if (node.matches(query)) {
+                                    process([node]);
                                 }
-                            });
-                        }
-                    });
+                                // Check if the added node contains iframes
+                                process(node.querySelectorAll(query));
+                            }
+                        });
+                    }
                 });
-                // Start observing the entire document for changes
-                observer.observe(document, {
-                    childList: true, // Watch for changes to the direct children
-                    subtree: true // Watch for changes in the entire subtree
-                });
-                // Function to process iframes and add parent URL parameters
             });
-        }
-        function processIframes(iframes) {
-            iframes.forEach(iframe => {
-                if (iframe.src) {
-                    const url = new URL(iframe.src);
-                    url.search = new URLSearchParams({
-                        ...Object.fromEntries(new URLSearchParams(window.location.search)),
-                        ...Object.fromEntries(url.searchParams),
-                    }).toString();
-                    iframe.src = url.href;
-                }
+            // Start observing the entire document for changes
+            observer.observe(root, {
+                childList: true, // Watch for changes to the direct children
+                subtree: true // Watch for changes in the entire subtree
             });
-        }
-        $watch('iframe', processIframes);
+            // Function to process iframes and add parent URL parameters
+        });
     }
 })();

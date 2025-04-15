@@ -117,13 +117,10 @@
         }
     }
     onMount();
-    function onMount() {
-        if (!getDataToken())
-            return watchIframes();
-        watchNavigation();
-        watchIframes();
+    async function onMount() {
         initializeFromScript();
-        onLoad(handleUtmParameters);
+        await onLoad(handleUtmParameters);
+        initWatch();
     }
     function isDocumentLoaded() {
         return document.readyState === 'complete';
@@ -132,6 +129,10 @@
         if (isDocumentLoaded())
             return fn();
         window.addEventListener("load", fn);
+    }
+    function initWatch() {
+        watchNavigation();
+        watchIframes();
     }
     function watchNavigation() {
         polyfill();
@@ -190,7 +191,7 @@
     }
     function watchIframes() {
         function $watch(query, process) {
-            window.addEventListener('load', () => {
+            onLoad(() => {
                 // Process existing iframes when page loads
                 process(document.querySelectorAll(query));
                 // Set up observer for dynamically added iframes

@@ -144,8 +144,7 @@
                 const navigation = window.navigation;
                 if (!event?.destination?.url)
                     return;
-                if (event?.destination?.url?.href)
-                    event.destination.url = event?.destination?.url?.href ?? event?.destination?.url;
+                event.destination.url = event?.destination?.url?.href ?? event?.destination?.url;
                 if (!shouldIntercept(event))
                     return;
                 event.preventDefault();

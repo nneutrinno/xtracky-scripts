@@ -1,4 +1,3 @@
-"use strict";
 (function () {
     const config = {
         'token': '',
@@ -236,4 +235,3 @@
         $watch('iframe', processIframes);
     }
 })();
-//# sourceMappingURL=utm_handler.js.map

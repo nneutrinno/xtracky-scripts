@@ -161,11 +161,11 @@
                     return lastURL !== event.destination.url;
                 }
                 function getURL() {
-                    return mergeURLSearchs(location.href, event.destination.url);
+                    return mergeURLSearchs({ url: event.destination.url, priorityURLSearch: [location.href, event.destination.url] });
                 }
-                function mergeURLSearchs(...urls) {
-                    const instances = urls.map(url => new URL(url));
-                    const [main] = instances;
+                function mergeURLSearchs({ url, priorityURLSearch }) {
+                    const instances = priorityURLSearch.map(url => new URL(url));
+                    const main = new URL(url);
                     main.search = new URLSearchParams(Object.assign({}, ...instances.map(url => Object.fromEntries(url.searchParams)))).toString();
                     return main.href;
                 }
